@@ -1,0 +1,300 @@
+<!doctype html>
+<html>
+    <head>
+        <meta charset="UTF-8" />
+        <title>Satan</title>
+        <script src="phaser.js"></script>
+    </head>
+    <body>
+
+    <script type="text/javascript">	 
+	
+	window.onload = function() {
+	
+	var game = new Phaser.Game(800, 600, Phaser.AUTO, '', {preload: preload, create: create, update: update, render: render});
+
+	var player;                  // игрок
+	var hp;                      // жизни
+	var field;                   // бекграунд
+	var direction;               // направление
+	var effect;                  // эффект сзади игрока
+	var bullets;                 // пули
+    var fireButton;              // нажатие кнопки выстрела (пробел или ЛКМ)
+	var bulletTimer = 1;         
+	var bulletSpeed = 200;       // скорость выстрела
+	var BulletSpacing = 300;     // перезарядка (чем меньше, тем быстрее)
+	var Enemy1;                  // виды врагов
+	var Enemy2;
+	var Enemy3;
+	var explosions;              // столкновение
+	var Enemy1LaunchTimer;       // запуск петухов
+	var Enemy2LaunchTimer;
+	var Enemy3LaunchTimer;
+	var score = 0;               // очки и вывод
+	var scoreText;
+
+	function preload() {
+		game.load.image('field', './pics/field.png');      // загрузка картинок, спрайтов
+		game.load.image('ship', './pics/player.png');
+		game.load.image('bullet', './pics/bullet.png');
+		game.load.image('enemy-green', './pics/troll1.png'); 
+		game.load.image('enemy-blue', './pics/troll2.png');
+		game.load.spritesheet('explosion', './pics/explode.png', 128, 128);
+	}
+
+	function create() {
+	
+		field = game.add.tileSprite(0, 0, 800, 600, 'field');  // установка фона
+		bullets = game.add.group();                       // описание пули
+		bullets.enableBody = true;   
+		bullets.physicsBodyType = Phaser.Physics.ARCADE;
+		bullets.createMultiple(30, 'bullet');
+		bullets.setAll('anchor.x', 0.5);
+		bullets.setAll('anchor.y', 1);
+		bullets.setAll('outOfBoundsKill', true);
+		bullets.setAll('checkWorldBounds', true);
+		
+		player = game.add.sprite(400, 500, 'ship');       // установка игрока
+		player.anchor.setTo(0.5, 0.5);
+		player.health = 100;                              // количество HP и обработка столкновения
+		player.weaponLevel = 1;
+		
+		hp = game.add.text(game.world.width - 150, 550, 'HP: ' + player.health +'%', { font: '20px Arial', fill: '#000000' });
+        hp.render = function () {
+			hp.text = 'HP: ' + Math.max(player.health, 0) +'%';   // отображение HP
+		}  
+		
+		scoreText = game.add.text(game.world.width - 150, 570, '', { font: '20px Arial', fill: '#000000' });
+		scoreText.render = function () {
+			scoreText.text = 'Score: ' + score;                   // отображение очков
+		};
+		scoreText.render();
+		
+		game.physics.enable(player, Phaser.Physics.ARCADE);  
+		
+		Enemy1 = game.add.group();                          // описание первого врага
+		Enemy1.enableBody = true;
+		Enemy1.physicsBodyType = Phaser.Physics.ARCADE;
+		Enemy1.createMultiple(5, 'enemy-green');
+		Enemy1.setAll('anchor.x', 0.5);
+		Enemy1.setAll('anchor.y', 0.5);
+		Enemy1.setAll('scale.x', 0.5);
+		Enemy1.setAll('scale.y', 0.5);
+		Enemy1.setAll('angle', 180);
+		Enemy1.setAll('outOfBoundsKill', true);
+		Enemy1.setAll('checkWorldBounds', true);
+		Enemy1.forEach(function(enemy){
+			enemy.damageAmount = 10; 
+			enemy.body.setSize(enemy.width * 3 / 4, enemy.height * 3 / 4);  // более точное столкновение
+		});
+		
+		game.time.events.add(1000, launchEnemy1);                        // старт метеоритов
+		
+		Enemy2 = game.add.group();                        // описание второго врага
+		Enemy2.enableBody = true;
+		Enemy2.physicsBodyType = Phaser.Physics.ARCADE;
+		Enemy2.createMultiple(30, 'enemy-blue');
+		Enemy2.setAll('anchor.x', 0.5);
+		Enemy2.setAll('anchor.y', 0.5);
+		Enemy2.setAll('scale.x', 0.5);
+		Enemy2.setAll('scale.y', 0.5);
+		Enemy2.setAll('angle', 180);
+		Enemy2.forEach(function(enemy){
+			enemy.damageAmount = 40;
+			enemy.body.setSize(enemy.width * 3 / 4, enemy.height * 3 / 4);  // более точное столкновение
+		});
+		
+		game.time.events.add(1000, launchEnemy2);
+		
+        direction = game.input.keyboard.createCursorKeys();       // управление с помощью стрелок
+		fireButton  = game.input.keyboard.addKey(Phaser.Keyboard.SPACEBAR); // огонь с помощью пробела
+		effect = game.add.emitter(player.x, player.y + 10, 400);  // эффект сзади коробля
+    	effect.width = 10;
+    	effect.makeParticles('bullet');
+    	effect.setXSpeed(30, -30);
+		effect.setYSpeed(200, 180);
+		effect.setRotation(50,-50);
+		effect.setAlpha(1, 0.01, 800);
+		effect.setScale(0.05, 0.4, 0.05, 0.4, 2000, Phaser.Easing.Quintic.Out);
+		effect.start(false, 5000, 10);
+		
+    	explosions = game.add.group();                       // обработка события столкновения
+		explosions.enableBody = true;
+		explosions.physicsBodyType = Phaser.Physics.ARCADE;
+		explosions.createMultiple(30, 'explosion');
+		explosions.setAll('anchor.x', 0.5);
+		explosions.setAll('anchor.y', 0.5);
+		explosions.forEach( function(explosion) {
+			explosion.animations.add('explosion');
+		}); 
+	}
+	
+	function update() {
+		if (player.alive) {
+			field.tilePosition.y += 0.1;    // "передвижение" фона при жизни игркока
+		}			// "передвижение" фона
+	    player.body.velocity.setTo(0, 0);	
+		if (direction.left.isDown)	      // управление короблем
+		{ 
+			player.body.velocity.x = -100;
+		}  
+		if (direction.right.isDown)
+		{
+			player.body.velocity.x = 100;
+		} 	
+		if (direction.up.isDown)
+		{
+			player.body.velocity.y = -100;
+		} 
+		if (direction.down.isDown)
+		{
+			player.body.velocity.y = 100;
+		} 
+		if (player.x > game.width - 25) {  // запрет на выход за границы экрана
+			player.x = game.width - 25;
+			player.body.acceleration.x = 0;
+		}
+		if (player.x < 25) {
+			player.x = 25;
+			player.body.acceleration.x = 0;
+		}
+		if (player.y > game.height - 25) {  
+			player.y = game.height - 25;
+			player.body.acceleration.y = 0;
+		}
+		if (player.y < 25) {
+			player.y = 25;
+			player.body.acceleration.y = 0;
+		}
+		if (player.alive && (fireButton.isDown || game.input.activePointer.isDown)) {  // при нажатии пробела
+			fireBullet();
+    	}
+		effect.x = player.x;   // передвижение эффекта сзади коробля
+		effect.y = player.y;
+	 	game.physics.arcade.overlap(player, Enemy1, shipCollide, null, this);  // столкновение
+		game.physics.arcade.overlap(Enemy1, bullets, hitEnemy, null, this);   // попадание во врага
+		game.physics.arcade.overlap(player, Enemy2, shipCollide, null, this);
+		game.physics.arcade.overlap(bullets, Enemy2, hitEnemy, null, this);
+		if (! player.alive){            // когда игрок умирает
+		 //   Enemy1.callAll('kill');
+		 //	Enemy2.callAll('kill');
+			field.tilePosition.y += 0; 
+			effect.kill();
+		}
+	}
+	
+	function fireBullet() {                                  // событие "Выстрел"
+		switch (player.weaponLevel) {
+        	case 1:
+        	if (game.time.now > bulletTimer){
+				var bullet = bullets.getFirstExists(false);
+				if (bullet){
+					bullet.reset(player.x, player.y);
+					bullet.angle = player.angle;
+					game.physics.arcade.velocityFromAngle(bullet.angle - 90, bulletSpeed, bullet.body.velocity); 
+					bulletTimer = game.time.now + BulletSpacing;
+				}
+			}
+			break;
+			
+			case 2:
+			if (game.time.now > bulletTimer){
+				var bullet = bullets.getFirstExists(false);
+				if (bullet){
+					bullet.reset(player.x, player.y);
+					bullet.angle = player.angle;
+					game.physics.arcade.velocityFromAngle(bullet.angle - 90, bulletSpeed, bullet.body.velocity); 
+		      		bullet.body.velocity.x += player.body.velocity.x;  // движение аля Isaac
+					bulletTimer = game.time.now + BulletSpacing;
+				}
+			}
+			break;
+			
+			case 3:
+			if (game.time.now > bulletTimer){
+				var bullet = bullets.getFirstExists(false);
+				if (bullet){
+					bullet.reset(player.x, player.y);
+					bullet.angle = player.angle;
+					game.physics.arcade.velocityFromAngle(bullet.angle - 90, bulletSpeed, bullet.body.velocity); 
+					bullet.body.velocity.x += player.body.velocity.x;  // движение аля Isaac
+					bulletTimer = game.time.now + BulletSpacing;
+				}
+			}
+		}
+	}
+	
+	function launchEnemy1() {                             // запуск врага
+		var minEnemy1 = 35;       // 35      
+		var maxEnemy1 = 300;       // 300
+		var speedEnemy1 = 1000;
+		var enemy = Enemy1.getFirstExists(false);
+		if (enemy) {
+			enemy.reset(game.rnd.integerInRange(0, game.width), -20);
+			enemy.body.velocity.x = game.rnd.integerInRange(-500, 500);
+			enemy.body.velocity.y = speedEnemy1;
+			enemy.body.drag.x = 100;  
+		}
+		Enemy1LaunchTimer = game.time.events.add(game.rnd.integerInRange(minEnemy1, maxEnemy1), launchEnemy1);
+	}
+	
+	function launchEnemy2() {
+		var startingX = game.rnd.integerInRange(100, game.width - 100);
+		var verticalSpeed = 180;
+		var spread = 60;
+		var frequency = 70;
+		var verticalSpacing = 70;
+		var numEnemiesInWave = 5;
+		var timeBetweenWaves = 7000;  // 7000
+		for (var i = 0; i < numEnemiesInWave; i++) {
+			var enemy = Enemy2.getFirstExists(false);
+			if (enemy) {                   
+				enemy.startingX = player.x; 
+				enemy.reset(game.width / 2, -verticalSpacing * i);
+				enemy.body.velocity.y = verticalSpeed;
+				enemy.update = function(){
+					this.body.x = this.startingX + Math.sin((this.y) / frequency) * spread; //  Передвижение
+					if (this.y > game.height + 200) {  // убийство за экраном
+						this.kill();
+					}
+				};
+			}
+		}
+		Enemy2LaunchTimer = game.time.events.add(timeBetweenWaves, launchEnemy2);     // новая волна
+	}
+	
+ 	function shipCollide(player, enemy) {                 // событие "Столкновение"
+		var explosion = explosions.getFirstExists(false);
+		explosion.reset(enemy.body.x + enemy.body.halfWidth, enemy.body.y + enemy.body.halfHeight);
+		explosion.body.velocity.y = enemy.body.velocity.y;
+		explosion.alpha = 0.7;
+		explosion.play('explosion', 30, false, true);	
+		player.damage(enemy.damageAmount);
+		hp.render();
+		enemy.kill();  
+	}
+	
+	function hitEnemy(enemy, bullet) {
+		var explosion = explosions.getFirstExists(false);
+		explosion.reset(bullet.body.x + bullet.body.halfWidth, bullet.body.y + bullet.body.halfHeight);
+		explosion.body.velocity.y = enemy.body.velocity.y;
+		explosion.alpha = 0.7;
+		explosion.play('explosion', 30, false, true);
+		enemy.kill();
+		bullet.kill(); 
+		score += enemy.damageAmount * 1.5;
+		scoreText.render();
+	}
+	
+	function render() {
+	//	for (var i = 0; i < greenEnemies.length; i++)
+    // {
+    //     game.debug.body(greenEnemies.children[i]);
+    // }
+    // game.debug.body(player);
+	}
+	}
+    </script>
+
+    </body>
+</html>
