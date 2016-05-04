@@ -1,0 +1,15 @@
+{
+  "name": "Game-Of-Gods",
+  "scripts": {
+  },
+  "env": {
+  },
+  "formation": {
+  },
+  "addons": [
+
+  ],
+  "buildpacks": [
+
+  ]
+}
